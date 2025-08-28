@@ -211,6 +211,24 @@ struct Segdesc {
 	unsigned sd_g : 1;          // Granularity: limit scaled by 4K when set
 	unsigned sd_base_31_24 : 8; // High bits of segment base address
 };
+struct SystemSegdesc64{
+    unsigned sd_lim_15_0 : 16;
+    unsigned sd_base_15_0 : 16;
+    unsigned sd_base_23_16 : 8;
+    unsigned sd_type : 4;
+	unsigned sd_s : 1;          // 0 = system, 1 = application
+	unsigned sd_dpl : 2;        // Descriptor Privilege Level
+	unsigned sd_p : 1;          // Present
+	unsigned sd_lim_19_16 : 4;  // High bits of segment limit
+	unsigned sd_avl : 1;        // Unused (available for software use)
+	unsigned sd_rsv1 : 2;       // Reserved
+	unsigned sd_g : 1;          // Granularity: limit scaled by 4K when set
+	unsigned sd_base_31_24 : 8; // High bits of segment base address
+    uint32_t sd_base_63_32;  
+    unsigned sd_res1 : 8;
+    unsigned sd_clear : 8;
+    unsigned sd_res2 : 16;
+};
 // Null segment
 #define SEG_NULL	{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }
 // Segment that is loadable but faults when used
@@ -242,18 +260,23 @@ struct Segdesc {
 #define STA_A		0x1	    // Accessed
 
 // System segment type bits
-#define STS_T16A	0x1	    // Available 16-bit TSS
-#define STS_LDT		0x2	    // Local Descriptor Table
-#define STS_T16B	0x3	    // Busy 16-bit TSS
-#define STS_CG16	0x4	    // 16-bit Call Gate
-#define STS_TG		0x5	    // Task Gate / Coum Transmitions
-#define STS_IG16	0x6	    // 16-bit Interrupt Gate
-#define STS_TG16	0x7	    // 16-bit Trap Gate
-#define STS_T32A	0x9	    // Available 32-bit TSS
-#define STS_T32B	0xB	    // Busy 32-bit TSS
-#define STS_CG32	0xC	    // 32-bit Call Gate
-#define STS_IG32	0xE	    // 32-bit Interrupt Gate
-#define STS_TG32	0xF	    // 32-bit Trap Gate
+// #define STS_T16A	0x1	    // Available 16-bit TSS
+// #define STS_LDT		0x2	    // Local Descriptor Table
+// #define STS_T16B	0x3	    // Busy 16-bit TSS
+// #define STS_CG16	0x4	    // 16-bit Call Gate
+// #define STS_TG		0x5	    // Task Gate / Coum Transmitions
+// #define STS_IG16	0x6	    // 16-bit Interrupt Gate
+// #define STS_TG16	0x7	    // 16-bit Trap Gate
+// #define STS_T32A	0x9	    // Available 32-bit TSS
+// #define STS_T32B	0xB	    // Busy 32-bit TSS
+// #define STS_CG32	0xC	    // 32-bit Call Gate
+// #define STS_IG32	0xE	    // 32-bit Interrupt Gate
+// #define STS_TG32	0xF	    // 32-bit Trap Gate
+#define STS_T64A	0x9	    // Available 64-bit TSS
+#define STS_T64B	0xB	    // Busy 64-bit TSS
+#define STS_CG64	0xC	    // 64-bit Call Gate
+#define STS_IG64	0xE	    // 64-bit Interrupt Gate
+#define STS_TG64	0xF	    // 64-bit Trap Gate
 
 
 /*
@@ -264,46 +287,16 @@ struct Segdesc {
 
 #ifndef __ASSEMBLER__
 
-// Task state segment format (as described by the Pentium architecture book)
-struct Taskstate {
-	uint32_t ts_link;	// Old ts selector
-	uintptr_t ts_esp0;	// Stack pointers and segment selectors
-	uint16_t ts_ss0;	//   after an increase in privilege level
-	uint16_t ts_padding1;
-	uintptr_t ts_esp1;
-	uint16_t ts_ss1;
-	uint16_t ts_padding2;
-	uintptr_t ts_esp2;
-	uint16_t ts_ss2;
-	uint16_t ts_padding3;
-	physaddr_t ts_cr3;	// Page directory base
-	uintptr_t ts_eip;	// Saved state from last task switch
-	uint32_t ts_eflags;
-	uint32_t ts_eax;	// More saved state (registers)
-	uint32_t ts_ecx;
-	uint32_t ts_edx;
-	uint32_t ts_ebx;
-	uintptr_t ts_esp;
-	uintptr_t ts_ebp;
-	uint32_t ts_esi;
-	uint32_t ts_edi;
-	uint16_t ts_es;		// Even more saved state (segment selectors)
-	uint16_t ts_padding4;
-	uint16_t ts_cs;
-	uint16_t ts_padding5;
-	uint16_t ts_ss;
-	uint16_t ts_padding6;
-	uint16_t ts_ds;
-	uint16_t ts_padding7;
-	uint16_t ts_fs;
-	uint16_t ts_padding8;
-	uint16_t ts_gs;
-	uint16_t ts_padding9;
-	uint16_t ts_ldt;
-	uint16_t ts_padding10;
-	uint16_t ts_t;		// Trap on task switch
-	uint16_t ts_iomb;	// I/O map base address
-};
+//https://wiki.osdev.org/Task_State_Segment
+typedef struct{
+	uint32_t Reserved0;
+	uint64_t RSP[3]; //The Stack Pointers used to load the stack when a privilege level change occurs from a lower privilege level to a higher one.
+	uint64_t Reserved1;
+	uint64_t IST[7];  //IST#: Interrupt Stack Table. The Stack Pointers used to load the stack when an entry in the Interrupt Descriptor Table has an IST value other than 0.
+	uint64_t Reserved2;
+	uint16_t Reserved3;
+	uint16_t IOPB; //I/O Map Base Address Field. Contains a 16-bit offset from the base of the TSS to the I/O Permission Bit Map.
+}__attribute__((packed)) TSS64;
 
 // Gate descriptors for interrupts and traps
 struct Gatedesc {
