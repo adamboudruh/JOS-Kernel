@@ -1,0 +1,19 @@
+
+echo + target remote localhost:1234\n
+target remote localhost:1234
+
+symbol-file obj/kern/kernel
+
+
+watch *(unsigned long long*)0x10000 == 0xDEADBEEF
+
+continue
+
+# Read ImageBase
+set $base = *(unsigned long long*)0x10008
+echo "ImageBase detected at: "
+output $base
+
+add-symbol-file bootloader/boot.efi.debug -o $base
+
+si
