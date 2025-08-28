@@ -211,23 +211,23 @@ struct Segdesc {
 	unsigned sd_g : 1;          // Granularity: limit scaled by 4K when set
 	unsigned sd_base_31_24 : 8; // High bits of segment base address
 };
-struct SystemSegdesc64{
-    unsigned sd_lim_15_0 : 16;
-    unsigned sd_base_15_0 : 16;
-    unsigned sd_base_23_16 : 8;
-    unsigned sd_type : 4;
-	unsigned sd_s : 1;          // 0 = system, 1 = application
-	unsigned sd_dpl : 2;        // Descriptor Privilege Level
-	unsigned sd_p : 1;          // Present
-	unsigned sd_lim_19_16 : 4;  // High bits of segment limit
-	unsigned sd_avl : 1;        // Unused (available for software use)
-	unsigned sd_rsv1 : 2;       // Reserved
-	unsigned sd_g : 1;          // Granularity: limit scaled by 4K when set
-	unsigned sd_base_31_24 : 8; // High bits of segment base address
+struct Segdesc64{
+    uint32_t sd_lim_15_0 : 16;
+    uint32_t sd_base_15_0 : 16;
+    uint32_t sd_base_23_16 : 8;
+    uint32_t sd_type : 4;
+	uint32_t sd_s : 1;          // 0 = system, 1 = application
+	uint32_t sd_dpl : 2;        // Descriptor Privilege Level
+	uint32_t sd_p : 1;          // Present
+	uint32_t sd_lim_19_16 : 4;  // High bits of segment limit
+	uint32_t sd_avl : 1;        // Unused (available for software use)
+	uint32_t sd_rsv1 : 2;       // Reserved
+	uint32_t sd_g : 1;          // Granularity: limit scaled by 4K when set
+	uint32_t sd_base_31_24 : 8; // High bits of segment base address
     uint32_t sd_base_63_32;  
-    unsigned sd_res1 : 8;
-    unsigned sd_clear : 8;
-    unsigned sd_res2 : 16;
+    uint32_t sd_res1 : 8;
+    uint32_t sd_clear : 8;
+    uint32_t sd_res2 : 16;
 };
 // Null segment
 #define SEG_NULL	{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }
@@ -288,7 +288,7 @@ struct SystemSegdesc64{
 #ifndef __ASSEMBLER__
 
 //https://wiki.osdev.org/Task_State_Segment
-typedef struct{
+struct TSS64{
 	uint32_t Reserved0;
 	uint64_t RSP[3]; //The Stack Pointers used to load the stack when a privilege level change occurs from a lower privilege level to a higher one.
 	uint64_t Reserved1;
@@ -296,19 +296,34 @@ typedef struct{
 	uint64_t Reserved2;
 	uint16_t Reserved3;
 	uint16_t IOPB; //I/O Map Base Address Field. Contains a 16-bit offset from the base of the TSS to the I/O Permission Bit Map.
-}__attribute__((packed)) TSS64;
+}__attribute__((packed)) ;
 
 // Gate descriptors for interrupts and traps
+// struct Gatedesc {
+// 	unsigned gd_off_15_0 : 16;   // low 16 bits of offset in segment
+// 	unsigned gd_sel : 16;        // segment selector
+// 	unsigned gd_args : 5;        // # args, 0 for interrupt/trap gates
+// 	unsigned gd_rsv1 : 3;        // reserved(should be zero I guess)
+// 	unsigned gd_type : 4;        // type(STS_{TG,IG32,TG32})
+// 	unsigned gd_s : 1;           // must be 0 (system)
+// 	unsigned gd_dpl : 2;         // descriptor(meaning new) privilege level
+// 	unsigned gd_p : 1;           // Present
+// 	unsigned gd_off_31_16 : 16;  // high bits of offset in segment
+// };
+//https://wiki.osdev.org/Interrupt_Descriptor_Table
 struct Gatedesc {
-	unsigned gd_off_15_0 : 16;   // low 16 bits of offset in segment
-	unsigned gd_sel : 16;        // segment selector
-	unsigned gd_args : 5;        // # args, 0 for interrupt/trap gates
-	unsigned gd_rsv1 : 3;        // reserved(should be zero I guess)
-	unsigned gd_type : 4;        // type(STS_{TG,IG32,TG32})
-	unsigned gd_s : 1;           // must be 0 (system)
-	unsigned gd_dpl : 2;         // descriptor(meaning new) privilege level
-	unsigned gd_p : 1;           // Present
-	unsigned gd_off_31_16 : 16;  // high bits of offset in segment
+	uint32_t gd_off_15_0 : 16;   // low 16 bits of offset in segment
+	uint32_t gd_sel : 16;        // segment selector
+	uint32_t gd_ist : 3;        // offset into the Interrupt Stack Table(tss)
+	uint32_t gd_rsv1 : 5;        // reserved(should be zero I guess)
+	uint32_t gd_type : 4;        // type(STS_{TG,IG64,TG64})
+	uint32_t gd_s : 1;           // must be 0 (system)
+	uint32_t gd_dpl : 2;         // descriptor(meaning new) privilege level
+	uint32_t gd_p : 1;           // Present
+	uint32_t gd_off_31_16 : 16;  // high bits of offset in segment
+	uint32_t gd_off_32_63;       
+    uint32_t gd_rsv2;                   
+
 };
 
 // Set up a normal interrupt/trap gate descriptor.
@@ -327,21 +342,23 @@ struct Gatedesc {
 //	  this interrupt/trap gate explicitly using an int instruction.
 #define SETGATE(gate, istrap, sel, off, dpl)			\
 {								\
-	(gate).gd_off_15_0 = (uint32_t) (off) & 0xffff;		\
+	(gate).gd_off_15_0 = (uint64_t) (off) & 0xffff;		\
 	(gate).gd_sel = (sel);					\
-	(gate).gd_args = 0;					\
+	(gate).gd_ist = 0;					\
 	(gate).gd_rsv1 = 0;					\
-	(gate).gd_type = (istrap) ? STS_TG32 : STS_IG32;	\
+	(gate).gd_type = (istrap) ? STS_TG64 : STS_IG64;	\
 	(gate).gd_s = 0;					\
 	(gate).gd_dpl = (dpl);					\
 	(gate).gd_p = 1;					\
-	(gate).gd_off_31_16 = (uint32_t) (off) >> 16;		\
+	(gate).gd_off_31_16 = ((uint64_t) (off) >> 16)& 0xffff;	\
+	(gate).gd_off_32_63 = ((uint64_t) (off) >> 32) & 0xffffffff;       \
+    (gate).gd_rsv2 = 0;               \
 }
 
 // Set up a call gate descriptor.
 #define SETCALLGATE(gate, sel, off, dpl)           	        \
 {								\
-	(gate).gd_off_15_0 = (uint32_t) (off) & 0xffff;		\
+	(gate).gd_off_15_0 = (uint64_t) (off) & 0xffff;		\
 	(gate).gd_sel = (sel);					\
 	(gate).gd_args = 0;					\
 	(gate).gd_rsv1 = 0;					\
@@ -349,13 +366,33 @@ struct Gatedesc {
 	(gate).gd_s = 0;					\
 	(gate).gd_dpl = (dpl);					\
 	(gate).gd_p = 1;					\
-	(gate).gd_off_31_16 = (uint32_t) (off) >> 16;		\
+	(gate).gd_off_31_16 = (uint64_t) (off) >> 16;		\
+}
+
+#define SETTSS(desc,type,base,lim,dpl)   \
+{         \
+    (desc)->sd_lim_15_0 = (uint64_t) (lim) & 0xffff; \
+    (desc)->sd_base_15_0 = (uint64_t)(base) & 0xffff; \
+    (desc)->sd_base_23_16 = ((uint64_t)(base)>>16) & 0xff;   \
+    (desc)->sd_type = type;  \
+    (desc)->sd_s = 0; \
+    (desc)->sd_dpl = 0; \
+    (desc)->sd_p = 1; \
+    (desc)->sd_lim_19_16 = ((uint64_t)(lim) >> 16) & 0xf;  \
+    (desc)->sd_avl = 0; \
+    (desc)->sd_rsv1 = 0; \
+    (desc)->sd_g = 0;    \
+    (desc)->sd_base_31_24 = ((uint64_t)(base)>>24)& 0xff; \
+    (desc)->sd_base_63_32 = ((uint64_t)(base)>>32) & 0xffffffff; \
+    (desc)->sd_res1 = 0; \
+    (desc)->sd_clear = 0; \
+    (desc)->sd_res2 = 0; \
 }
 
 // Pseudo-descriptors used for LGDT, LLDT and LIDT instructions.
 struct Pseudodesc {
 	uint16_t pd_lim;		// Limit
-	uint32_t pd_base;		// Base address
+	uint64_t pd_base;		// Base address
 } __attribute__ ((packed));
 
 #endif /* !__ASSEMBLER__ */

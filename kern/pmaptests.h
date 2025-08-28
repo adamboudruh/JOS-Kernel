@@ -162,6 +162,10 @@ check_kern_pml4e(void)
 	for (i = 0; i < n; i += PGSIZE)
 		assert(check_va2pa(pml4e, UPAGES + i) == PADDR(pages) + i);
 
+	// check envs array (new test for lab 3)
+	n = ROUNDUP(NENV*sizeof(struct Env), PGSIZE);
+	for (i = 0; i < n; i += PGSIZE)
+		assert(check_va2pa(pml4e, UENVS + i) == PADDR(envs) + i);
 
 	// check phys mem
 	for (i = 0; i < npages * PGSIZE; i += PGSIZE)
@@ -180,6 +184,7 @@ check_kern_pml4e(void)
 		//case PDX(UVPT):??
 		case PDX(KSTACKTOP-1):
 		case PDX(UPAGES):
+		case PDX(UENVS):
 			assert(pgdir[i] & PTE_P);
 			break;
 		default://changed to handle new memory space

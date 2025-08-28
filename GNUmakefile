@@ -110,8 +110,8 @@ $(BOOTLOADERDIR)/boot.efi:$(BOOTLOADERDIR)/main.c
 	$(V)$(MAKE) -C bootloader
 
 include kern/Makefrag
-#include lib/Makefrag
-#include user/Makefrag
+include lib/Makefrag
+include user/Makefrag
 
 CPUS ?= 1
 
