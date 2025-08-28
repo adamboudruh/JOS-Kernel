@@ -124,9 +124,10 @@ lgdt(void *p)
 }
 
 static inline void
-lldt(uint16_t sel)
+lldt(uint32_t sel)
 {
-	asm volatile("lldt %0" : : "r" (sel));
+    // Use eax directly to fix issues on gcc 4.9 where entire register is not cleared
+    asm volatile("movl %0, %%eax; lldt %%eax" : : "r" (sel) : "%eax");
 }
 
 static inline void

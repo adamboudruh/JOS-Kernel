@@ -11,9 +11,11 @@
 #include <kern/pmap.h>
 #include <kern/trap.h>
 #include <kern/monitor.h>
+#include <kern/sched.h>
+#include <kern/cpu.h>
+#include <kern/spinlock.h>
 
 struct Env *envs = NULL;		// All environments
-struct Env *curenv = NULL;		// The current env
 static struct Env *env_free_list;	// Free environment list
 					// (linked by Env->env_link)
 
@@ -34,8 +36,9 @@ static struct Env *env_free_list;	// Free environment list
 // definition of gdt specifies the Descriptor Privilege Level (DPL)
 // of that descriptor: 0 for kernel and 3 for user.
 //
-
-struct Segdesc gdt[] ={
+//5 + 2 entry tss per cpu
+struct Segdesc gdt[5+ 2*NCPU] =
+{
 	// 0x0 - unused (always faults -- for trapping NULL far pointers)
 	SEG_NULL,
 
@@ -245,6 +248,15 @@ env_alloc(struct Env **newenv_store, envid_t parent_id)
 	e->env_tf.tf_cs = GD_UT | 3;
 	// You will set e->env_tf.tf_rip later.
 
+	// Enable interrupts while in user mode.
+	// LAB 4: Your code here.
+
+	// Clear the page fault handler until user installs one.
+	e->env_pgfault_upcall = 0;
+
+	// Also clear the IPC receiving flag.
+	e->env_ipc_recving = 0;
+
 	// commit the allocation
 	env_free_list = e->env_link;
 	*newenv_store = e;
@@ -364,20 +376,21 @@ env_free(struct Env *e)
 
 	// Note the environment's demise.
 	cprintf("[%08x] free env %08x\n", curenv ? curenv->env_id : 0, e->env_id);
+	// cprintf("ULIM:%x\n",ULIM);
+	// cprintf("UTOP:%x\n",UTOP);
+
+	static_assert(UTOP % PTSIZE == 0);
 
 	// Flush all mapped pages in the user portion of the address space
 	pdpe_t *env_pdpe = KADDR(PTE_ADDR(e->env_pml4e[0]));
 	int pdeno_limit;
 	uint64_t pdpe_index;
-	// using 3 instead of NPDPENTRIES as we have only first three indices
-	// set for 4GB of address space.
+	//using 3 instead of NPDPENTRIES as we only need to deal with first 3gbs
 	for(pdpe_index=0;pdpe_index<3;pdpe_index++){
 		if(!(env_pdpe[pdpe_index] & PTE_P))
 			continue;
 		pde_t *env_pgdir = KADDR(PTE_ADDR(env_pdpe[pdpe_index]));
-		pdeno_limit  = PDX(~0);
-		static_assert(UTOP % PTSIZE == 0);
-		for (pdeno = 0; pdeno < pdeno_limit; pdeno++) {
+		for (pdeno = 0; pdeno < NPDENTRIES; pdeno++) {
 
 			// only look at mapped page tables
 			if (!(env_pgdir[pdeno] & PTE_P))
@@ -387,7 +400,7 @@ env_free(struct Env *e)
 			pt = (pte_t*) KADDR(pa);
 
 			// unmap all PTEs in this page table
-			for (pteno = 0; pteno < PTX(~0); pteno++) {
+			for (pteno = 0; pteno < NPDENTRIES &&PGADDR((uint64_t)0,pdpe_index,pdeno, pteno, 0)<(void*)UTOP; pteno++) {
 				if (pt[pteno] & PTE_P){
 					page_remove(e->env_pml4e, PGADDR((uint64_t)0,pdpe_index,pdeno, pteno, 0));
 				}
@@ -418,15 +431,26 @@ env_free(struct Env *e)
 
 //
 // Frees environment e.
+// If e was the current env, then runs a new environment (and does not return
+// to the caller).
 //
 void
 env_destroy(struct Env *e)
 {
+	// If e is currently running on other CPUs, we change its state to
+	// ENV_DYING. A zombie environment will be freed the next time
+	// it traps to the kernel.
+	if (e->env_status == ENV_RUNNING && curenv != e) {
+		e->env_status = ENV_DYING;
+		return;
+	}
+
 	env_free(e);
 
-	cprintf("Destroyed the only environment - nothing more to do!\n");
-	while (1)
-		monitor(NULL);
+	if (curenv == e) {
+		curenv = NULL;
+		sched_yield();
+	}
 }
 
 
@@ -440,6 +464,8 @@ env_destroy(struct Env *e)
 void
 env_pop_tf(struct Trapframe *tf)
 {
+	// Record the CPU we are running on for user-space debugging
+	curenv->env_cpunum = cpunum();
 	asm volatile("movq %0,%%rsp\n"
 			 "\tmovq 0(%%rsp),%%r15\n" \
 			 "\tmovq 8(%%rsp),%%r14\n" \

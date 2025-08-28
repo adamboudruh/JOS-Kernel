@@ -72,4 +72,8 @@ typedef int64_t off_t;
 // Return the offset of 'member' relative to the beginning of a struct type
 #define offsetof(type, member)  ((size_t) (&((type*)0)->member))
 
+//inrement a pointer by a number of bytes
+#define incptr(p, n) ((void *)(((uintptr_t)(p)) + (n)))
+
+
 #endif /* !JOS_INC_TYPES_H */

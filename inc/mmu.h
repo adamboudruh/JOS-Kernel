@@ -64,7 +64,7 @@
 
 // construct linear address from indexes and offset
 // #define PGADDR(d, t, o)	((void*) ((d) << PDXSHIFT | (t) << PTXSHIFT | (o)))
-#define PGADDR(l4, pdp, pd, pt, o)	((void*) ((l4) << PML4XSHIFT | (pdp) << PDPXSHIFT | (pd) << PDXSHIFT | (pt) << PTXSHIFT | (o)))
+#define PGADDR(l4, pdp, pd, pt, o)	((void*) (((uint64_t)l4) << PML4XSHIFT | ((uint64_t)pdp) << PDPXSHIFT | ((uint64_t)pd) << PDXSHIFT | ((uint64_t)pt) << PTXSHIFT | (o)))
 // Page directory and page table constants.
 #define NPDENTRIES	512		// page directory entries per page directory
 #define NPTENTRIES	512		// page table entries per page table
@@ -239,10 +239,10 @@ struct Segdesc64{
     type, 1, dpl, 1, (unsigned) (lim) >> 28, 0, 0, 1, 1,		\
     (unsigned) (base) >> 24 }
 
-#define SEG64(type, base, lim, dpl) (struct Segdesc)			\
-{ ((lim) >> 12) & 0xffff, (base) & 0xffff, ((base) >> 16) & 0xff,	\
-    type, 1, dpl, 1, (unsigned) (lim) >> 28, 0, 1, 0, 1,		\
-    (unsigned) (base) >> 24 }
+#define SEG64(type, base, lim, dpl) 					\
+{ .sd_lim_15_0=((lim) >> 12) & 0xffff,.sd_base_15_0= (base) & 0xffff,.sd_base_23_16= ((base) >> 16) & 0xff,	\
+    .sd_type=type, .sd_s=1, .sd_dpl=dpl, .sd_p=1, .sd_lim_19_16=(unsigned) (lim) >> 28,.sd_avl= 0, .sd_rsv1=1, .sd_db=0, .sd_g=1,		\
+    .sd_base_31_24=(unsigned) (base) >> 24 }
 
 #define SEG16(type, base, lim, dpl) (struct Segdesc)			\
 { (lim) & 0xffff, (base) & 0xffff, ((base) >> 16) & 0xff,		\

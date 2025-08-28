@@ -98,6 +98,17 @@ struct Trapframe {
 	uint64_t tf_ss;
 } __attribute__((packed));
 
+struct UTrapframe {
+	/* information about the fault */
+	uint64_t utf_fault_va;	/* va for T_PGFLT, 0 otherwise */
+	uint64_t utf_err;
+	/* trap-time return state */
+	struct PushRegs utf_regs;
+	uint64_t utf_rip;
+	uint64_t utf_eflags;
+	/* the trap-time stack to return to */
+	uint64_t utf_rsp;
+} __attribute__((packed));
 
 
 #endif /* !__ASSEMBLER__ */

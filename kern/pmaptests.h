@@ -50,6 +50,8 @@ check_page_free_list(bool only_low_memory)
 		assert(page2pa(pp) != EXTPHYSMEM - PGSIZE);
 		assert(page2pa(pp) != EXTPHYSMEM);
 		assert(page2pa(pp) < EXTPHYSMEM || (char *) page2kva(pp) >= first_free_page);
+		// (new test for lab 4)
+		assert(page2pa(pp) != MPENTRY_PADDR);
 
 		if (page2pa(pp) < EXTPHYSMEM)
 			++nfree_basemem;
@@ -172,10 +174,15 @@ check_kern_pml4e(void)
 		assert(check_va2pa(pml4e, KERNBASE + i) == i);
 
 	// check kernel stack
-	for (i = 0; i < KSTKSIZE; i += PGSIZE)
-		assert(check_va2pa(pml4e, KSTACKTOP - KSTKSIZE + i) == PADDR(bootstack) + i);
-	assert(check_va2pa(pml4e, KSTACKTOP - PTSIZE) == ~0);
-	
+	// (updated in lab 4 to check per-CPU kernel stacks)
+	for (n = 0; n < NCPU; n++) {
+		uint64_t base = KSTACKTOP - (KSTKSIZE + KSTKGAP) * (n + 1);
+		for (i = 0; i < KSTKSIZE; i += PGSIZE)
+			assert(check_va2pa(pml4e, base + KSTKGAP + i)
+				== PADDR(percpu_kstacks[n]) + i);
+		for (i = 0; i < KSTKGAP; i += PGSIZE)
+			assert(check_va2pa(pml4e, base + i) == ~0);
+	}
 	pdpe_t *pdpe = KADDR(PTE_ADDR(kern_pml4[PML4X(KERNBASE)]));
 	pde_t  *pgdir = KADDR(PTE_ADDR(pdpe[PDPX(KERNBASE)]));
 	// check PDE permissions
@@ -185,6 +192,7 @@ check_kern_pml4e(void)
 		case PDX(KSTACKTOP-1):
 		case PDX(UPAGES):
 		case PDX(UENVS):
+		case PDX(MMIOBASE):
 			assert(pgdir[i] & PTE_P);
 			break;
 		default://changed to handle new memory space
@@ -243,6 +251,7 @@ check_page(void)
 	pdpe_t *pdpe;
 	pde_t *pde;
 	void *va;
+	uintptr_t mm1, mm2;
 	int i;
 	pp0 = pp1 = pp2 = pp3 = pp4 = pp5 =0;
 	assert(pp0 = page_alloc(0));
@@ -398,6 +407,29 @@ check_page(void)
 	// page_free(pp3);
 	// page_free(pp4);
 	// page_free(pp5);
+
+	// test mmio_map_region
+	mm1 = (uintptr_t) mmio_map_region(0, 4097);
+	mm2 = (uintptr_t) mmio_map_region(0, 4096);
+	// check that they're in the right region
+	assert(mm1 >= MMIOBASE && mm1 + 8192 < MMIOLIM);
+	assert(mm2 >= MMIOBASE && mm2 + 8192 < MMIOLIM);
+	// check that they're page-aligned
+	assert(mm1 % PGSIZE == 0 && mm2 % PGSIZE == 0);
+	// check that they don't overlap
+	assert(mm1 + 8192 <= mm2);
+	// check page mappings
+	assert(check_va2pa(kern_pml4, mm1) == 0);
+	assert(check_va2pa(kern_pml4, mm1+PGSIZE) == PGSIZE);
+	assert(check_va2pa(kern_pml4, mm2) == 0);
+	assert(check_va2pa(kern_pml4, mm2+PGSIZE) == ~0);
+	// check permissions
+	assert(*pml4e_walk(kern_pml4, (void*) mm1, 0) & (PTE_W|PTE_PWT|PTE_PCD));
+	assert(!(*pml4e_walk(kern_pml4, (void*) mm1, 0) & PTE_U));
+	// clear the mappings
+	*pml4e_walk(kern_pml4, (void*) mm1, 0) = 0;
+	*pml4e_walk(kern_pml4, (void*) mm1 + PGSIZE, 0) = 0;
+	*pml4e_walk(kern_pml4, (void*) mm2, 0) = 0;
 
 	cprintf("check_page() succeeded!\n");
 }

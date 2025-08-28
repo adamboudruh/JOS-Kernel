@@ -5,6 +5,7 @@ OUTPUT_FORMAT("elf64-x86-64", "elf64-x86-64", "elf64-x86-64")
 OUTPUT_ARCH(i386:x86-64)
 ENTRY(_start)
 
+
 SECTIONS
 {
 	/* Link the kernel at this address: "." means the current address */
@@ -28,35 +29,41 @@ SECTIONS
 		PROVIDE(__STAB_BEGIN__ = .);
 		*(.stab);
 		PROVIDE(__STAB_END__ = .);
-		BYTE(0)		/* Force the linker to allocate space
-				   for this section */
+		BYTE(0);
 	}
 
 	.stabstr : {
 		PROVIDE(__STABSTR_BEGIN__ = .);
 		*(.stabstr);
 		PROVIDE(__STABSTR_END__ = .);
-		BYTE(0)		/* Force the linker to allocate space
-				   for this section */
+		BYTE(0);
 	}
-
+	
+	/*.debug_info : {
+		PROVIDE(__DEBUG_BEGIN__ = .);
+		*(.debug_info);
+		PROVIDE(__DEBUG_END__ = .);
+		BYTE(0);
+	}*/
 	/* Adjust the address for the data segment to the next page */
 	. = ALIGN(0x1000);
 
 	/* The data segment */
 	.data : {
-		*(.data)
+		*(.data .data.*)
 	}
 
 	.bss : {
 		PROVIDE(edata = .);
-		*(.bss)
+		*(.dynbss)
+		*(.bss .bss.*)
+		*(COMMON)
 		PROVIDE(end = .);
-		BYTE(0)
 	}
 
 
 	/DISCARD/ : {
-		*(.eh_frame .note.GNU-stack)
+		*(.eh_frame .note.GNU-stack .comment .note)
 	}
 }
+
