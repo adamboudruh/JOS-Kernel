@@ -142,6 +142,9 @@ debuginfo_rip(uintptr_t addr, struct Ripdebuginfo *info)
 		// Make sure this memory is valid.
 		// Return -1 if it is not.  Hint: Call user_mem_check.
 		// LAB 3: Your code here.
+		if (user_mem_check(curenv, usd, sizeof(struct UserStabData), PTE_U) < 0) {
+            return -1;
+        }
 
 		stabs = usd->stabs;
 		stab_end = usd->stab_end;
@@ -150,6 +153,12 @@ debuginfo_rip(uintptr_t addr, struct Ripdebuginfo *info)
 
 		// Make sure the STABS and string table memory is valid.
 		// LAB 3: Your code here.
+		if (user_mem_check(curenv, stabs, (uintptr_t)stab_end - (uintptr_t)stabs, PTE_U) < 0) {
+            return -1;
+        }
+        if (user_mem_check(curenv, stabstr, (uintptr_t)stabstr_end - (uintptr_t)stabstr, PTE_U) < 0) {
+            return -1;
+        }
 	}
 
 	// String table validity checks
@@ -206,6 +215,12 @@ debuginfo_rip(uintptr_t addr, struct Ripdebuginfo *info)
 	//	which one.
 	// Your code here.
 
+	stab_binsearch(stabs, &lline, &rline, N_SLINE, addr);
+	if (lline <= rline) {
+		info->rip_line = stabs[lline].n_desc;
+	} else {
+		return -1;
+	}
 
 
 	// Search backwards from the line number for the relevant filename

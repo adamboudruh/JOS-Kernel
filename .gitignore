@@ -21,6 +21,7 @@
 /bootloader/uefi/*.efi
 /bootloader/*.o
 /bootloader/*.efi
+/practice_stuff
 
 # nfs
 .nfs*

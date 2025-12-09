@@ -84,10 +84,14 @@ static void check_page_installed_pml4e(void);
 // If we're out of memory, boot_alloc should panic.
 // This function may ONLY be used during initialization,
 // before the page_free_list list has been set up.
+//
+// boot_alloc INVARIANT that we must maintain is:
+// 	The physical page whose kernel-virtual addresses start at nextfree and above remain free for allocation
 static void *
 boot_alloc(uint32_t n)
 {
-	static char *nextfree;	// virtual address of next byte of free memory
+	static char *nextfree;	// virtual address of next byte of free memory.
+	char *prev_nextfree;
 	char *result;
 
 	// Initialize nextfree if this is the first time.
@@ -97,7 +101,7 @@ boot_alloc(uint32_t n)
 	// to any kernel code or global variables.
 	if (!nextfree) {
 		extern char end[];
-		nextfree = ROUNDUP((char *) end, PGSIZE);
+		nextfree = ROUNDUP((char *) end+1, PGSIZE);
 	}
 
 	// Allocate a chunk large enough to hold 'n' bytes, then update
@@ -105,8 +109,24 @@ boot_alloc(uint32_t n)
 	// to a multiple of PGSIZE.
 	//
 	// LAB 2: Your code here.
-	
-	return NULL;
+	if (n == 0) {
+        return nextfree;
+    }
+    
+    result = nextfree;
+    
+    nextfree = ROUNDUP(nextfree + n, PGSIZE);
+    
+    if (PADDR(nextfree) > npages * PGSIZE) {
+        panic("boot_alloc: out of memory");
+    }
+    
+	// create pages:
+	// an array of 'struct Pageinfo' records. The pages array has npages records
+
+
+
+    return result;
 }
 
 // Set up a two-level page table:
@@ -126,9 +146,6 @@ mem_init(void)
 
 	// Find out how much memory the machine has (npages & npages_basemem).
 	i386_detect_memory();
-
-	// Remove this line when you're ready to test this function.
-	panic("mem_init: This function is not finished\n");
 
 	//////////////////////////////////////////////////////////////////////
 	// create initial page directory.
@@ -152,11 +169,20 @@ mem_init(void)
 	// to initialize all fields of each struct PageInfo to 0.
 	// Your code goes here:
 
+	pages = (struct PageInfo *) boot_alloc(npages * sizeof(struct PageInfo));
+	memset(pages, 0, npages * sizeof(struct PageInfo));
 
 	//////////////////////////////////////////////////////////////////////
 	// Make 'envs' point to an array of size 'NENV' of 'struct Env'.
+	/*
+	- call boot_alloc() to allocate NENV records of size struct Env to the envs array
+	- Use mem_set() to fill envs array with 0s
+	- Call boot_map_region() to map envs array as read-only for the user (PTE_U | PTE_P) at the UENVS address (from memlayout.h)
+	- If not working, chc=eck that pp_ref firl
+	*/
 	// LAB 3: Your code here.
-
+	envs = (struct Env *) boot_alloc(NENV * sizeof(struct Env));
+	memset(envs, 0, NENV * sizeof(struct Env));
 
 	//////////////////////////////////////////////////////////////////////
 	// Now that we've allocated the initial kernel data structures, we set
@@ -184,37 +210,30 @@ mem_init(void)
 	//    - pages itself -- kernel RW, user NONE
 	// Your code goes here:
 
+	boot_map_region(kern_pml4, 
+                UPAGES, 
+                ROUNDUP(npages * sizeof(struct PageInfo), PGSIZE), 
+                PADDR(pages), 
+                PTE_U | PTE_P);
+	
+	boot_map_region(kern_pml4,
+            UENVS,
+            ROUNDUP(NENV * sizeof(struct Env), PGSIZE),
+            PADDR(envs),
+            PTE_U | PTE_P);
 
-	//////////////////////////////////////////////////////////////////////
-	// Map the 'envs' array read-only by the user at linear address UENVS
-	// (ie. perm = PTE_U | PTE_P).
-	// Permissions:
-	//    - the new image at UENVS  -- kernel R, user R
-	//    - envs itself -- kernel RW, user NONE
-	// LAB 3: Your code here.
-
-
-	//////////////////////////////////////////////////////////////////////
-	// Use the physical memory that 'bootstack' refers to as the kernel
-	// stack.  The kernel stack grows down from virtual address KSTACKTOP.
-	// We consider the entire range from [KSTACKTOP-PTSIZE, KSTACKTOP)
-	// to be the kernel stack, but break this into two pieces:
-	//     * [KSTACKTOP-KSTKSIZE, KSTACKTOP) -- backed by physical memory
-	//     * [KSTACKTOP-PTSIZE, KSTACKTOP-KSTKSIZE) -- not backed; so if
-	//       the kernel overflows its stack, it will fault rather than
-	//       overwrite memory.  Known as a "guard page".
-	//     Permissions: kernel RW, user NONE
-	// Your code goes here:
+	boot_map_region(kern_pml4,
+                KSTACKTOP - KSTKSIZE,
+                KSTKSIZE,
+                PADDR(bootstack),
+                PTE_W | PTE_P);
 
 
-	//////////////////////////////////////////////////////////////////////
-	// Map all of physical memory at KERNBASE.
-	// Ie.  the VA range [KERNBASE, 2^32) should map to
-	//      the PA range [0, 2^32 - KERNBASE)
-	// We might not have 2^32 - KERNBASE bytes of physical memory, but
-	// we just set up the mapping anyway.
-	// Permissions: kernel RW, user NONE
-	// Your code goes here:
+	boot_map_region(kern_pml4,
+                KERNBASE,
+                (1ULL << 32) - KERNBASE,   // Full range: 2^32 - KERNBASE
+                0,
+                PTE_W | PTE_P);
 
 
 	// Initialize the SMP-related parts of the memory map
@@ -313,43 +332,114 @@ page_init(void)
 	// Change the code to reflect this.
 	// NB: DO NOT actually touch the physical memory corresponding to
 	// free pages!
+
+	/*
+	notes for page_init:
+	- Construct list by inserting new nodes at head of linked list
+	- Start with: page_free_list = NULL
+	- Add all free pages in the array with a loop
+
+	Predicament: pp_ref can be checked to see if a page is free or not, but mem_init just filled the whole pages array with zero
+	even if some are being used. 
+	Solution: check data of first byte maybe? Or can I check if the page has a physical address? or maybe use nextfree somehow?
+
+	Regardless, at end of page_init:
+	- page_free_list must contain all pages from 1 to end of basemem
+	- also contain pages beginning at nextfree to last available page
+
+	*/
 	size_t i;
+	physaddr_t first_free_addr = PADDR(boot_alloc(0));
+    size_t first_free_page = first_free_addr / PGSIZE;
+	page_free_list = NULL;
+
 	for (i = 0; i < npages; i++) {
-		pages[i].pp_ref = 0;
-		pages[i].pp_link = page_free_list;
-		page_free_list = &pages[i];
+        if (i == 0) {
+            pages[i].pp_ref = 1;
+            pages[i]. pp_link = NULL;
+            continue;
+        }
+        
+        if (i >= 1 && i < npages_basemem) {
+            pages[i].pp_ref = 0;
+            pages[i]. pp_link = page_free_list;
+            page_free_list = &pages[i];
+            continue;
+        }
+        
+        if (i >= IOPHYSMEM / PGSIZE && i < EXTPHYSMEM / PGSIZE) {
+            pages[i].pp_ref = 1;
+            pages[i].pp_link = NULL;
+            continue;
+        }
+        
+        if (i >= EXTPHYSMEM / PGSIZE && i < first_free_page) {
+            pages[i].pp_ref = 1;
+            pages[i].pp_link = NULL;
+            continue;
+        }
+        
+        if (i >= first_free_page) {
+            pages[i].pp_ref = 0;
+            pages[i]. pp_link = page_free_list;
+            page_free_list = &pages[i];
+        }
 	}
 }
 
-//
-// Allocates a physical page.  If (alloc_flags & ALLOC_ZERO), fills the entire
-// returned physical page with '\0' bytes.  Does NOT increment the reference
-// count of the page - the caller must do these if necessary (either explicitly
-// or via page_insert).
-//
-// Be sure to set the pp_link field of the allocated page to NULL so
-// page_free can check for double-free bugs.
-//
-// Returns NULL if out of free memory.
-//
-// Hint: use page2kva and memset
+/*
+- returns 'struct PageInfo' record of a free page from page_free_list
+- That record must be detached from the list and its corresponding page should be zero-filled if caller passed ALLOC_ZERO
+- Check that page_free_list has pages; if empty return null
+- select furst record pointed by page_free_list and separate it
+- Before returning, page_allog must nullify its pp_link field
+- Also, if ALLOC_ZERO
+*/
 struct PageInfo *
 page_alloc(int alloc_flags)
 {
-	// Fill this function in
-	return 0;
+	if (page_free_list == NULL) {
+        return NULL;
+    }
+    
+    struct PageInfo *free_page = page_free_list;
+    
+    // remove it from the free list
+    page_free_list = free_page->pp_link;
+    
+    // set pp_link to NULL
+    free_page->pp_link = NULL;
+    
+    // zero the page if requested
+    if (alloc_flags & ALLOC_ZERO) {
+        memset(page2kva(free_page), 0, PGSIZE);
+    }
+    
+    return free_page;
 }
 
 //
 // Return a page to the free list.
 // (This function should only be called when pp->pp_ref reaches 0.)
 //
+/*
+- opposite of page_alloc()
+- receive a 'struct PageInfo' record and put it back onto the list
+- only done if pp_ref field on that page is zero and not linked to any other list with pp_link
+- If either of these not true, panic
+*/
 void
 page_free(struct PageInfo *pp)
 {
-	// Fill this function in
-	// Hint: You may want to panic if pp->pp_ref is nonzero or
-	// pp->pp_link is not NULL.    
+	if (pp->pp_ref != 0) {
+        panic("page_free: pp->pp_ref is nonzero");
+    }
+    if (pp->pp_link != NULL) {
+        panic("page_free: pp->pp_link is not NULL");
+    }
+    
+    pp->pp_link = page_free_list;
+    page_free_list = pp;  
 }
 
 //
@@ -363,121 +453,186 @@ page_decref(struct PageInfo* pp)
 		page_free(pp);
 }
 
-// Given 'pml4e', a pointer to a level 4 page table, pml4e_walk returns
-// a pointer to the page table entry (PTE) for linear address 'va'.
-// This requires walking the four-level page table structure.
-//
-// The relevant page table page might not exist yet.
-// If this is true, and create == false, then pml4e_walk returns NULL.
-// Otherwise, pml4e_walk allocates a new page table page with page_alloc.
-//    - If the allocation fails, pml4e_walk returns NULL.
-//    - Otherwise, the new page's reference count is incremented,
-//	the page is cleared,
-//	and pml4e_walk returns a pointer into the new page table page.
-//
-//	This process is recursively done for each level.
-//
-// Hint 1: you can turn a PageInfo * into the physical address of the
-// page it refers to with page2pa() from kern/pmap.h.
-//
-// Hint 2: the x86 MMU checks permission bits in each level of the mapping
-// including the page table, so it's safe to leave permissions in the higher levels
-// directory more permissive than strictly necessary.
-//
-// Hint 3: look at inc/mmu.h for useful macros that manipulate page
-// table and page directory entries.
-//
-// Hint 4: The bulk of the implementations for each level are nearly identical
-// with the main difference being the macros used to index each table
-// and the end behavior of pgdir_walk.
-
+/*
+- receives a pointer to pml4e, a virtual address, and int create
+- Obtain pointer to a record in pml4 table with: pml4e_t *pml4_re = &pml4e[PML4X(va)];
+- Check if pointer is valid: if (*pml4_re & PTE_P) ...
+- If valid, get pointer to PDPT table: pdpe_t *pdpe = KADDR(PTE_ADDR(*pml4_re));
+- Ends with return pdpe_walk(pdpe, va, create); to pass onto next level
+- If pointer pml4_re is not valid return NULL: if (!(*pml4_re & PTE_P)) return NULL;
+     - BUT if createe != 0, call page_alloc to get a free page
+	 - struct PageInfo *pp_page_table = page_alloc(ALLOC_ZERO);
+	 - if pp_page_table is not null, increment its ref count
+	 - Store the physical address with all permissions in PML4 table:
+	   *pml4_re = page2pa(pp_page_table) | PTE_P | PTE_W | PTE_U;
+	 - Complete link to PDPT table with: pdpe_t *pdpe = KADDR(PTE_ADDR(*pml4_re));
+	 - return pdpe_walk(pdpe, va, create);
+*/
 pte_t *
 pml4e_walk(pml4e_t *pml4e, const void *va, int create)
 {
-	// Fill this function in
-	return NULL;
+    pml4e_t *pml4_entry = &pml4e[PML4X(va)];
+    pdpe_t *pdpe;
+    
+    if (!(*pml4_entry & PTE_P)) {
+        if (! create) {
+            return NULL;
+        }
+        
+        struct PageInfo *pp = page_alloc(ALLOC_ZERO);
+        if (pp == NULL) {
+            return NULL;
+        }
+        
+        pp->pp_ref++;
+        *pml4_entry = page2pa(pp) | PTE_P | PTE_W | PTE_U;
+    }
+    
+    pdpe = (pdpe_t *)KADDR(PTE_ADDR(*pml4_entry));
+    return pdpe_walk(pdpe, va, create);
 }
 
-
+/*
+Logic is the same with a couple changes:
+- PML4 table is now PDPT (pdpe_t *pdpe)
+- Old PDPT table is now Page Directory (pde_t *pgdir)
+- Pointer to pml4 table (pml4e_t *pml4e) is now pointer to PDPT table (pdpe_t *pdpe)
+- Macro is now PDPX(va) instead of PML4X(va)
+- At the end, return pgdir_walk(pgdir, va, create);
+*/
 pte_t *
 pdpe_walk(pdpe_t *pdpe,const void *va,int create)
 {
-	// Fill this function in
-	return NULL;
+    pdpe_t *pdpe_entry = &pdpe[PDPX(va)];
+    pde_t *pgdir;
+    
+    if (!(*pdpe_entry & PTE_P)) {
+        if (! create) {
+            return NULL;
+        }
+        
+        struct PageInfo *pp = page_alloc(ALLOC_ZERO);
+        if (pp == NULL) {
+            return NULL;
+        }
+        
+        pp->pp_ref++;
+        *pdpe_entry = page2pa(pp) | PTE_P | PTE_W | PTE_U;
+    }
+    
+    pgdir = (pde_t *)KADDR(PTE_ADDR(*pdpe_entry));
+    return pgdir_walk(pgdir, va, create);
 }
 
+/*
+- Logic is the same with same changes pretty much
+- Macro is now PDX(va)
+- Should finally return the physical address:
+  return &page_table[PTX(va)];
+*/
 pte_t *
 pgdir_walk(pde_t *pgdir, const void *va, int create)
 {
-	// Fill this function in
-	return NULL;
+	pde_t *pde = &pgdir[PDX(va)];
+    pte_t *page_table;
+    
+    if (!(*pde & PTE_P)) {
+        if (! create) {
+            return NULL;
+        }
+        
+        struct PageInfo *pp = page_alloc(ALLOC_ZERO);
+        if (pp == NULL) {
+            return NULL;
+        }
+        
+        pp->pp_ref++;
+        *pde = page2pa(pp) | PTE_P | PTE_W | PTE_U;
+    }
+    
+    page_table = (pte_t *)KADDR(PTE_ADDR(*pde));
+    return &page_table[PTX(va)];
 }
 
-//
-// Map [va, va+size) of virtual address space to physical [pa, pa+size)
-// in the page table rooted at pgdir.  Size is a multiple of PGSIZE, and
-// va and pa are both page-aligned.
-// Use permission bits perm|PTE_P for the entries.
-//
-// This function is only intended to set up the ``static'' mappings
-// above UTOP. As such, it should *not* change the pp_ref field on the
-// mapped pages.
-//
-// Hint: the TA solution uses pml4e_walk
+
+/*
+- Loop to visit virtual pages to be allocated
+- Inside loop, map virtual pages (va) to (pa) by setting page table entries with:
+  pte_t *pte = pml4e_walk((pml4e_t *) pml4e, va, 1);
+  *pte = pa | perm | PTE_P;
+- va and pa must move alone with each iteration of loop
+- DON'T INC pp_ref
+*/
 static void
 boot_map_region(pde_t *pml4e, uintptr_t va, size_t size, physaddr_t pa, int perm)
 {
-	// Fill this function in
+	size_t i;
+    pte_t *pte;
+    
+    for (i = 0; i < size; i += PGSIZE) {
+        pte = pml4e_walk((pml4e_t *)pml4e, (void *)(va + i), 1);
+        
+        if (pte == NULL) {
+            panic("boot_map_region: pml4e_walk failed");
+        }
+        *pte = (pa + i) | perm | PTE_P;
+    }
 }
 
-//
-// Map the physical page 'pp' at virtual address 'va'.
-// The permissions (the low 12 bits) of the page table entry
-// should be set to 'perm|PTE_P'.
-//
-// Requirements
-//   - If there is already a page mapped at 'va', it should be page_remove()d.
-//   - If necessary, on demand, a page table should be allocated and inserted
-//     into 'pgdir'.
-//   - pp->pp_ref should be incremented if the insertion succeeds.
-//   - The TLB must be invalidated if a page was formerly present at 'va'.
-//
-// Corner-case hint: Make sure to consider what happens when the same
-// pp is re-inserted at the same virtual address in the same pgdir.
-// However, try not to distinguish this case in your code, as this
-// frequently leads to subtle bugs; there's an elegant way to handle
-// everything in one code path.
-//
-// RETURNS:
-//   0 on success
-//   -E_NO_MEM, if page table couldn't be allocated
-//
-// Hint: The TA solution is implemented using pml4e_walk, page_remove,
-// and page2pa.
-//
+
+/*
+- To get a page to map the va, call pml4e_walk():
+  pte_t *pte = pml4e_walk((pml4e_t *) pml4e, va, 1);
+- If pte is NULL, return -E_NO_MEM
+- Otherwise, inc pp_ref
+- If page referenced by *pte is valid (*pte&PTE_P), use:
+  page_remove(pml4e, va); to remove existing mapping
+- Assign: *pte = page2pa(pp) | perm | PTE_P; return 0;
+*/
 int
 page_insert(pde_t *pml4e, struct PageInfo *pp, void *va, int perm)
 {
-	// Fill this function in
+	pte_t *pte = pml4e_walk((pml4e_t *)pml4e, va, 1);
+    
+    if (pte == NULL) {
+        return -E_NO_MEM;
+    }
+
+    pp->pp_ref++;
+    
+    if (*pte & PTE_P) {
+        page_remove(pml4e, va);
+    }
+    
+    *pte = page2pa(pp) | perm | PTE_P;
+    
     return 0;
 }
 
-//
-// Return the page mapped at virtual address 'va'.
-// If pte_store is not zero, then we store in it the address
-// of the pte for this page.  This is used by page_remove and
-// can be used to verify page permissions for syscall arguments,
-// but should not be used by most callers.
-//
-// Return NULL if there is no page mapped at va.
-//
-// Hint: the TA solution uses pml4e_walk and pa2page.
-//
+
+/*
+- Get a value for the pointer to a page table record with pml4e_walk
+  pte_t *pte = pml4e_walk((pml4e_t *) pml4e, va, 0);
+- If the value is valid and not NULL, save in cal back var to be returned
+  *pte_store = p_pte;
+- AND return the struct PageInfo record corresponding to the pa in the PTE:
+  return pa2page(PTE_ADDR(*p_pte));
+- Otherwise return NULL
+*/
 struct PageInfo *
 page_lookup(pde_t *pml4e, void *va, pte_t **pte_store)
 {
-	// Fill this function in
-	return NULL;
+	pte_t *pte = pml4e_walk((pml4e_t *)pml4e, va, 0);
+    
+    if (pte == NULL || ! (*pte & PTE_P)) {
+        return NULL;
+    }
+    
+    if (pte_store != NULL) {
+        *pte_store = pte;
+    }
+    
+    return pa2page(PTE_ADDR(*pte));
 }
 
 
@@ -496,10 +651,28 @@ page_lookup(pde_t *pml4e, void *va, pte_t **pte_store)
 // Hint: The TA solution is implemented using page_lookup,
 // 	tlb_invalidate, and page_decref.
 //
+/*
+- Call page_lookup to verify and locate the page of the va
+  pte_t *pte = NULL;
+  struct PageInfo *pp = page_lookup(pml4e, va, &pte);
+- If pp is not NULL:
+  *p_pte = 0; to zero out page
+  page_decref(pp); decrements the pp_ref field
+  tlb_invalidate(pml4e, va); invalidates the page in TLB
+*/
 void
 page_remove(pde_t *pml4e, void *va)
 {
-	// Fill this function in
+	pte_t *pte = NULL;
+    struct PageInfo *pp = page_lookup(pml4e, va, &pte);
+    
+    if (pp == NULL) {
+        return;
+    }
+    
+    *pte = 0;
+    page_decref(pp);
+    tlb_invalidate(pml4e, va);
 }
 
 //
@@ -569,10 +742,39 @@ static uintptr_t user_mem_check_addr;
 // Returns 0 if the user program can access this range of addresses,
 // and -E_FAULT otherwise.
 //
+/*
+- for every page, obtain a struct PageInfo using page_lookup() and env->env_pml4e
+	- must return -E_FAULT if no PageInfo found, doesn't contain perms, or page is above ULIM
+- 
+*/
 int
 user_mem_check(struct Env *env, const void *va, size_t len, int perm)
 {
 	// LAB 3: Your code here.
+
+	uintptr_t start_va = (uintptr_t)va;
+    uintptr_t end_va = start_va + len;
+    
+    uintptr_t cur_va = ROUNDDOWN(start_va, PGSIZE);
+    
+    while (cur_va < end_va) {
+        if (cur_va >= ULIM) {
+            user_mem_check_addr = (cur_va < start_va) ? start_va : cur_va;
+            return -E_FAULT;
+        }
+        
+        // page table must give permission
+        pte_t *pte;
+        struct PageInfo *pp = page_lookup(env->env_pml4e, (void *)cur_va, &pte);
+        
+        // Must have a valid page with required permissions
+        if (pp == NULL || (*pte & (perm | PTE_P)) != (perm | PTE_P)) {
+            user_mem_check_addr = (cur_va < start_va) ? start_va : cur_va;
+            return -E_FAULT;
+        }
+        
+        cur_va += PGSIZE;
+    }
 
 	return 0;
 }
