@@ -99,7 +99,7 @@ boot_alloc(uint32_t n)
 	// to any kernel code or global variables.
 	if (!nextfree) {
 		extern char end[];
-		nextfree = ROUNDUP((char *) end, PGSIZE);
+		nextfree = ROUNDUP((char *) end+1, PGSIZE);
 	}
 
 	// Allocate a chunk large enough to hold 'n' bytes, then update
@@ -172,8 +172,15 @@ mem_init(void)
 
 	//////////////////////////////////////////////////////////////////////
 	// Make 'envs' point to an array of size 'NENV' of 'struct Env'.
+	/*
+	- call boot_alloc() to allocate NENV records of size struct Env to the envs array
+	- Use mem_set() to fill envs array with 0s
+	- Call boot_map_region() to map envs array as read-only for the user (PTE_U | PTE_P) at the UENVS address (from memlayout.h)
+	- If not working, chc=eck that pp_ref firl
+	*/
 	// LAB 3: Your code here.
-
+	envs = (struct Env *) boot_alloc(NENV * sizeof(struct Env));
+	memset(envs, 0, NENV * sizeof(struct Env));
 
 	//////////////////////////////////////////////////////////////////////
 	// Now that we've allocated the initial kernel data structures, we set
@@ -206,42 +213,19 @@ mem_init(void)
                 ROUNDUP(npages * sizeof(struct PageInfo), PGSIZE), 
                 PADDR(pages), 
                 PTE_U | PTE_P);
+	
+	boot_map_region(kern_pml4,
+            UENVS,
+            ROUNDUP(NENV * sizeof(struct Env), PGSIZE),
+            PADDR(envs),
+            PTE_U | PTE_P);
 
-	//////////////////////////////////////////////////////////////////////
-	// Map the 'envs' array read-only by the user at linear address UENVS
-	// (ie. perm = PTE_U | PTE_P).
-	// Permissions:
-	//    - the new image at UENVS  -- kernel R, user R
-	//    - envs itself -- kernel RW, user NONE
-	// LAB 3: Your code here.
-
-
-	//////////////////////////////////////////////////////////////////////
-	// Use the physical memory that 'bootstack' refers to as the kernel
-	// stack.  The kernel stack grows down from virtual address KSTACKTOP.
-	// We consider the entire range from [KSTACKTOP-PTSIZE, KSTACKTOP)
-	// to be the kernel stack, but break this into two pieces:
-	//     * [KSTACKTOP-KSTKSIZE, KSTACKTOP) -- backed by physical memory
-	//     * [KSTACKTOP-PTSIZE, KSTACKTOP-KSTKSIZE) -- not backed; so if
-	//       the kernel overflows its stack, it will fault rather than
-	//       overwrite memory.  Known as a "guard page".
-	//     Permissions: kernel RW, user NONE
-	// Your code goes here:
 	boot_map_region(kern_pml4,
                 KSTACKTOP - KSTKSIZE,
                 KSTKSIZE,
                 PADDR(bootstack),
                 PTE_W | PTE_P);
 
-
-	//////////////////////////////////////////////////////////////////////
-	// Map all of physical memory at KERNBASE.
-	// Ie.  the VA range [KERNBASE, 2^32) should map to
-	//      the PA range [0, 2^32 - KERNBASE)
-	// We might not have 2^32 - KERNBASE bytes of physical memory, but
-	// we just set up the mapping anyway.
-	// Permissions: kernel RW, user NONE
-	// Your code goes here:
 
 	boot_map_region(kern_pml4,
                 KERNBASE,
@@ -336,14 +320,12 @@ page_init(void)
 	page_free_list = NULL;
 
 	for (i = 0; i < npages; i++) {
-		// Page 0 - in use (BIOS/IDT)
         if (i == 0) {
             pages[i].pp_ref = 1;
             pages[i]. pp_link = NULL;
             continue;
         }
         
-        // base memory [1, npages_basemem) - FREE
         if (i >= 1 && i < npages_basemem) {
             pages[i].pp_ref = 0;
             pages[i]. pp_link = page_free_list;
@@ -351,21 +333,18 @@ page_init(void)
             continue;
         }
         
-        // I/O hole [IOPHYSMEM, EXTPHYSMEM) - in use
         if (i >= IOPHYSMEM / PGSIZE && i < EXTPHYSMEM / PGSIZE) {
             pages[i].pp_ref = 1;
             pages[i].pp_link = NULL;
             continue;
         }
         
-       // [EXTPHYSMEM, first_free_addr) - in use (kernel, page tables, pages[])
         if (i >= EXTPHYSMEM / PGSIZE && i < first_free_page) {
             pages[i].pp_ref = 1;
             pages[i].pp_link = NULL;
             continue;
         }
         
-        // [first_free_addr, end of memory) - FREE
         if (i >= first_free_page) {
             pages[i].pp_ref = 0;
             pages[i]. pp_link = page_free_list;
@@ -694,10 +673,39 @@ static uintptr_t user_mem_check_addr;
 // Returns 0 if the user program can access this range of addresses,
 // and -E_FAULT otherwise.
 //
+/*
+- for every page, obtain a struct PageInfo using page_lookup() and env->env_pml4e
+	- must return -E_FAULT if no PageInfo found, doesn't contain perms, or page is above ULIM
+- 
+*/
 int
 user_mem_check(struct Env *env, const void *va, size_t len, int perm)
 {
 	// LAB 3: Your code here.
+
+	uintptr_t start_va = (uintptr_t)va;
+    uintptr_t end_va = start_va + len;
+    
+    uintptr_t cur_va = ROUNDDOWN(start_va, PGSIZE);
+    
+    while (cur_va < end_va) {
+        if (cur_va >= ULIM) {
+            user_mem_check_addr = (cur_va < start_va) ? start_va : cur_va;
+            return -E_FAULT;
+        }
+        
+        // page table must give permission
+        pte_t *pte;
+        struct PageInfo *pp = page_lookup(env->env_pml4e, (void *)cur_va, &pte);
+        
+        // Must have a valid page with required permissions
+        if (pp == NULL || (*pte & (perm | PTE_P)) != (perm | PTE_P)) {
+            user_mem_check_addr = (cur_va < start_va) ? start_va : cur_va;
+            return -E_FAULT;
+        }
+        
+        cur_va += PGSIZE;
+    }
 
 	return 0;
 }

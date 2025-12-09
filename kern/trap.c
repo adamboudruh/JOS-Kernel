@@ -74,9 +74,28 @@ trap_init(void)
      * if your trap handler's name for divide by zero is t_device.
      * Additionally, you should declare trap handler as a function
      * to refer that in C code... (see the comment XYZ above)
-     *
+     Notes
      */
 	// LAB 3: Your code here.
+	SETGATE(idt[T_DIVIDE], 0, GD_KT, t_divide, 0);
+	SETGATE(idt[T_DEBUG], 1, GD_KT, t_debug, 0);
+	SETGATE(idt[T_NMI], 0, GD_KT, t_nmi, 0);
+	SETGATE(idt[T_BRKPT], 1, GD_KT, t_brkpt, 3);
+	SETGATE(idt[T_OFLOW], 1, GD_KT, t_oflow, 0);
+	SETGATE(idt[T_BOUND], 1, GD_KT, t_bound, 0);
+	SETGATE(idt[T_ILLOP], 1, GD_KT, t_illop, 0);
+	SETGATE(idt[T_DEVICE], 1, GD_KT, t_device, 0);
+	SETGATE(idt[T_DBLFLT], 0, GD_KT, t_dblflt, 0);
+	SETGATE(idt[T_TSS], 1, GD_KT, t_tss, 0);
+	SETGATE(idt[T_SEGNP], 1, GD_KT, t_segnp, 0);
+	SETGATE(idt[T_STACK], 1, GD_KT, t_stack, 0);
+	SETGATE(idt[T_GPFLT], 1, GD_KT, t_gpflt, 0);
+	SETGATE(idt[T_PGFLT], 1, GD_KT, t_pgflt, 0);
+	SETGATE(idt[T_FPERR], 1, GD_KT, t_fperr, 0);
+	SETGATE(idt[T_ALIGN], 1, GD_KT, t_align, 0);
+	SETGATE(idt[T_MCHK], 0, GD_KT, t_mchk, 0);
+	SETGATE(idt[T_SIMDERR], 1, GD_KT, t_simderr, 0);
+	SETGATE(idt[T_SYSCALL], 1, GD_KT, t_syscall, 3);
 
 	// Per-CPU setup
 	trap_init_percpu();
@@ -157,11 +176,45 @@ print_regs(struct PushRegs *regs)
 	cprintf("  rcx  0x%016x\n", regs->reg_rcx);
 	cprintf("  rax  0x%016x\n", regs->reg_rax);
 }
+
+/*
+- receives Trapframe with records related to the trap being caught
+- Decides which function to call based on tf->tf_trapno using if-else or switch
+- For ex 5, just worry about T_PGFLT. if trapno is T_PGFLT, call page_fault_handler(tf);
+- For ex 6, T_BRKPT and T_DEBUG, breakpoint exceptions
+- For these, we want to call monitor() with tf
+- For ex 7, T_SYSCALL
+*/
 static void
 trap_dispatch(struct Trapframe *tf)
 {
 	// Handle processor exceptions.
 	// LAB 3: Your code here.
+
+	switch (tf->tf_trapno) {
+    case T_PGFLT:
+        page_fault_handler(tf);
+        return;
+	case T_BRKPT:
+	case T_DEBUG:
+		monitor(tf);
+		return;
+	case T_SYSCALL:
+        // Call syscall() with arguments from registers
+        // Store return value in rax
+        tf->tf_regs.reg_rax = syscall(
+            tf->tf_regs.reg_rax,    // syscall number
+            tf->tf_regs.reg_rdx,    // arg1
+            tf->tf_regs. reg_rcx,    // arg2
+            tf->tf_regs. reg_rbx,    // arg3
+            tf->tf_regs. reg_rdi,    // arg4
+            tf->tf_regs.reg_rsi     // arg5
+        );
+        return;
+    }
+	
+
+
 
 	// Unexpected trap: The user process or the kernel has a bug.
 	print_trapframe(tf);
@@ -211,7 +264,10 @@ trap(struct Trapframe *tf)
 	env_run(curenv);
 }
 
-
+/*
+- to verify tf is in kernel mode: if ((tf->tf_cs & 3)) == 0); if yes panic and print fault_va
+- implement user_mem_check()
+*/
 void
 page_fault_handler(struct Trapframe *tf)
 {
@@ -223,7 +279,9 @@ page_fault_handler(struct Trapframe *tf)
 	// Handle kernel-mode page faults.
 
 	// LAB 3: Your code here.
-
+	if ((tf->tf_cs & 3) == 0) {
+        panic("page_fault_handler: still in kernel mode, fault_va = %016x", fault_va);
+    }
 	// We've already handled kernel-mode exceptions, so if we get here,
 	// the page fault happened in user mode.
 
