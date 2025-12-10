@@ -19,12 +19,48 @@
 //   If 'pg' is null, pass sys_ipc_recv a value that it will understand
 //   as meaning "no page".  (Zero is not the right value, since that's
 //   a perfectly valid place to map a page.)
+/*
+- receives message from JOS kernel and returns to receiver env
+Steps:
+- check pg parameter; if non null, points to page with message
+	- if null, assign it the value (void *)UTOP
+- attempt to receive message with sys_ipc_recv(pg)
+	- if negative, theres a problem with the message
+	- contents pointed by from_env_store and perm_store must be set to 0 if non null
+	- return the error code
+- if reading successful:
+	- if from_env_store non null, set to thisenv->env_ipc_from
+	- if perm_store non null, contents should be bitwise OR with thisenv->env_ipc_perm
+	- return the value sent by the sender: thisenv->env_ipc_value
+*/
 int32_t
 ipc_recv(envid_t *from_env_store, void *pg, int *perm_store)
 {
 	// LAB 4: Your code here.
-	panic("ipc_recv not implemented");
-	return 0;
+	int r;
+	
+	if (pg == NULL) pg = (void *)UTOP;
+	
+	r = sys_ipc_recv(pg);
+	
+	if (r < 0) {
+		if (from_env_store) {
+			*from_env_store = 0;
+		}
+		if (perm_store) {
+			*perm_store = 0;
+		}
+		return r;
+	}
+	
+	if (from_env_store) {
+		*from_env_store = thisenv->env_ipc_from;
+	}
+	if (perm_store) {
+		*perm_store = thisenv->env_ipc_perm;
+	}
+	
+	return thisenv->env_ipc_value;
 }
 
 // Send 'val' (and 'pg' with 'perm', if 'pg' is nonnull) to 'toenv'.
@@ -35,11 +71,38 @@ ipc_recv(envid_t *from_env_store, void *pg, int *perm_store)
 //   Use sys_yield() to be CPU-friendly.
 //   If 'pg' is null, pass sys_ipc_try_send a value that it will understand
 //   as meaning "no page".  (Zero is not the right value.)
+/*
+- attempts submission of message with sys_ipc_try_send until successful
+Steps
+- check pg parameter; if null, assign it (void *)UTOP
+- loop with sys_ipc_try_send() func to try to send to env to_env, message val, page pg with perm
+	- keep running while call to sys_ipc_try_send() returns -E_IPC_NOT_RECV
+	- if a diff negative value, panic
+	- otherwise, body of loop should call sys_yield() to be allow JOS to schedule another env
+*/
 void
 ipc_send(envid_t to_env, uint32_t val, void *pg, int perm)
 {
 	// LAB 4: Your code here.
-	panic("ipc_send not implemented");
+	int r;
+	if (pg == NULL) {
+		pg = (void *)UTOP;
+	}
+	
+	// keep trying until success
+	while (1) {
+		r = sys_ipc_try_send(to_env, val, pg, perm);
+		
+		if (r == 0) {
+			return;
+		}
+		
+		if (r == -E_IPC_NOT_RECV) {
+			sys_yield();
+		} else {
+			panic("ipc_send - %e", r);
+		}
+	}
 }
 
 // Find the first environment of the given type.  We'll use this to

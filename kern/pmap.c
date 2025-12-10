@@ -291,9 +291,26 @@ mem_init_mp(void)
 	//             it will fault rather than overwrite another CPU's stack.
 	//             Known as a "guard page".
 	//     Permissions: kernel RW, user NONE
-	//
+	/*
+	- Memory for all these stacks begins at 3GB, goes down in order of processor no
+	- Each allocated 32Kb (KSTKSIZE) with 32Kb gap between (KSTKGAP)
+	- formula for stack of ith processor is above
+	- Phys addresses with PADDR(&percpu_kstacks[i])
+	- Use boot_map_region to map each stack, w/ PTE_W for each stack
+	*/
 	// LAB 4: Your code here:
+	int i;
+	uintptr_t kstacktop_i;
 
+	for (i=0; i<NCPU; i++) {
+		kstacktop_i = KSTACKTOP - i * (KSTKSIZE + KSTKGAP);
+		
+		boot_map_region(kern_pml4,
+						kstacktop_i - KSTKSIZE,
+						KSTKSIZE,
+						PADDR(&percpu_kstacks[i]),
+						PTE_W | PTE_P);
+	}
 }
 
 // --------------------------------------------------------------
@@ -332,21 +349,9 @@ page_init(void)
 	// Change the code to reflect this.
 	// NB: DO NOT actually touch the physical memory corresponding to
 	// free pages!
-
 	/*
-	notes for page_init:
-	- Construct list by inserting new nodes at head of linked list
-	- Start with: page_free_list = NULL
-	- Add all free pages in the array with a loop
-
-	Predicament: pp_ref can be checked to see if a page is free or not, but mem_init just filled the whole pages array with zero
-	even if some are being used. 
-	Solution: check data of first byte maybe? Or can I check if the page has a physical address? or maybe use nextfree somehow?
-
-	Regardless, at end of page_init:
-	- page_free_list must contain all pages from 1 to end of basemem
-	- also contain pages beginning at nextfree to last available page
-
+	- ensure that MP_ENTRY_PADDR page is marked as in use and that its pp_ref is not 0
+	- also don't include it in the free list
 	*/
 	size_t i;
 	physaddr_t first_free_addr = PADDR(boot_alloc(0));
@@ -361,7 +366,12 @@ page_init(void)
         }
         
         if (i >= 1 && i < npages_basemem) {
-            pages[i].pp_ref = 0;
+            if (i == MPENTRY_PADDR / PGSIZE) {
+                pages[i].pp_ref = 1;
+                pages[i].pp_link = NULL;
+                continue;
+            }
+			pages[i].pp_ref = 0;
             pages[i]. pp_link = page_free_list;
             page_free_list = &pages[i];
             continue;
@@ -717,9 +727,24 @@ mmio_map_region(physaddr_t pa, size_t size)
 	// okay to simply panic if this happens).
 	//
 	// Hint: The staff solution uses boot_map_region.
-	//
+	/*
+	- PTE_PCD - page cache disable, PTE_PWT - page write through, both = 1
+	- receives phys address but maps to virtal
+	- Steps
+		- ROUNDUP size to PGSIZE
+		- Check if final size plus base exceeds MMIOLIM, if so panic
+		- Call boot_map_region to map va [base, base+size) to pa [pa, pa+size) with perm PTE_W | PTE_PCD | PTE_PWT
+		- Update base to start of next free region, like with boot_alloc
+	*/
 	// Your code here:
-	panic("mmio_map_region not implemented");
+	size = ROUNDUP(size, PGSIZE);
+	if (base + size > MMIOLIM) {
+        panic("reservation overflow MMIOLIM");
+    }
+	boot_map_region(kern_pml4, base, size, pa, PTE_W | PTE_PCD | PTE_PWT);
+	uintptr_t result = base;
+	base += size;
+	return (void *)result;
 }
 
 static uintptr_t user_mem_check_addr;

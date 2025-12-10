@@ -58,6 +58,23 @@ extern void t_mchk(); // no
 extern void t_simderr(); // no
 extern void t_syscall();
 
+extern void t_irq_timer();
+extern void t_irq_kbd();
+extern void t_irq_2();
+extern void t_irq_3();
+extern void t_irq_serial();
+extern void t_irq_5();
+extern void t_irq_6();
+extern void t_irq_spurious();
+extern void t_irq_8();
+extern void t_irq_9();
+extern void t_irq_10();
+extern void t_irq_11();
+extern void t_irq_12();
+extern void t_irq_13();
+extern void t_irq_ide();
+extern void t_irq_15();
+
 void trap_init(void);
 void trap_init_percpu(void);
 void print_regs(struct PushRegs *regs);

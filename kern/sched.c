@@ -27,8 +27,41 @@ sched_yield(void)
 	// another CPU (env_status == ENV_RUNNING). If there are
 	// no runnable environments, simply drop through to the code
 	// below to halt the cpu.
+	/*
+	Tips
+	- curenv->env_id to get current env's id
+	- loop to search for next env to run (goes over envs array using % NENV)
+		- Begin at env after current one in envs
+		- if curenv is not NULL the next env is envs[(ENVX(curenv->env_id) + 1) % NENV]
+		- if curenv == NULL, assume curenv is envs[0] and next one would be envs[ENVX(1) % NENV]
+		- loop stops when a runnable env is found or we looped back to starting env
+		- then call env_run() with that env, and if not run curenv again if ENV_RUNNING
 
+	*/
 	// LAB 4: Your code here.
+
+	int start;
+    int cur;
+    int i;
+
+    if (curenv != NULL) {
+        start = ENVX(curenv->env_id);
+    } else {
+        start = 0;
+    }
+
+    for (i = 0; i < NENV; i++) {
+        cur = (start + 1 + i) % NENV;
+        
+        if (envs[cur].env_status == ENV_RUNNABLE) {
+            env_run(&envs[cur]);
+            // env_run doesn't return
+        }
+    }
+
+    if (curenv != NULL && curenv->env_status == ENV_RUNNING) {
+        env_run(curenv);
+    }
 
 	// sched_halt never returns
 	sched_halt();

@@ -69,6 +69,23 @@ TRAPHANDLER_NOEC(t_simderr, T_SIMDERR);
 TRAPHANDLER_NOEC(t_syscall, T_SYSCALL);
 TRAPHANDLER_NOEC(t_default, T_DEFAULT);
 
+TRAPHANDLER_NOEC(t_irq_timer, IRQ_OFFSET + IRQ_TIMER);
+TRAPHANDLER_NOEC(t_irq_kbd, IRQ_OFFSET + IRQ_KBD);
+TRAPHANDLER_NOEC(t_irq_2, IRQ_OFFSET + 2);
+TRAPHANDLER_NOEC(t_irq_3, IRQ_OFFSET + 3);
+TRAPHANDLER_NOEC(t_irq_serial, IRQ_OFFSET + IRQ_SERIAL);
+TRAPHANDLER_NOEC(t_irq_5, IRQ_OFFSET + 5);
+TRAPHANDLER_NOEC(t_irq_6, IRQ_OFFSET + 6);
+TRAPHANDLER_NOEC(t_irq_spurious, IRQ_OFFSET + IRQ_SPURIOUS);
+TRAPHANDLER_NOEC(t_irq_8, IRQ_OFFSET + 8);
+TRAPHANDLER_NOEC(t_irq_9, IRQ_OFFSET + 9);
+TRAPHANDLER_NOEC(t_irq_10, IRQ_OFFSET + 10);
+TRAPHANDLER_NOEC(t_irq_11, IRQ_OFFSET + 11);
+TRAPHANDLER_NOEC(t_irq_12, IRQ_OFFSET + 12);
+TRAPHANDLER_NOEC(t_irq_13, IRQ_OFFSET + 13);
+TRAPHANDLER_NOEC(t_irq_ide, IRQ_OFFSET + IRQ_IDE);
+TRAPHANDLER_NOEC(t_irq_15, IRQ_OFFSET + 15);
+
 /* HINT 1 : TRAPHANDLER_NOEC(t_divide, T_DIVIDE);
 //          Do something like this if there is no error code for the trap
 // HINT 2 : TRAPHANDLER(t_dblflt, T_DBLFLT);
@@ -98,8 +115,8 @@ TRAPHANDLER_NOEC(t_default, T_DEFAULT);
     movq %rcx, 96(%rsp)
     movq %rdx, 88(%rsp)
     movq %rbp, 80(%rsp)
-    movq %rsi, 72(%rsp)
-    movq %rdi, 64(%rsp)
+    movq %rdi, 72(%rsp)
+    movq %rsi, 64(%rsp)
     movq %r8,  56(%rsp)
     movq %r9,  48(%rsp)
     movq %r10, 40(%rsp)
@@ -111,4 +128,5 @@ TRAPHANDLER_NOEC(t_default, T_DEFAULT);
     
     movq %rsp, %rdi
     call trap
+
 

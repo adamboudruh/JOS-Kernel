@@ -84,25 +84,42 @@ trap_init(void)
      Notes
      */
 	// LAB 3: Your code here.
-	SETGATE(idt[T_DIVIDE], 0, GD_KT, t_divide, 0);
-	SETGATE(idt[T_DEBUG], 1, GD_KT, t_debug, 0);
-	SETGATE(idt[T_NMI], 0, GD_KT, t_nmi, 0);
-	SETGATE(idt[T_BRKPT], 1, GD_KT, t_brkpt, 3);
-	SETGATE(idt[T_OFLOW], 1, GD_KT, t_oflow, 0);
-	SETGATE(idt[T_BOUND], 1, GD_KT, t_bound, 0);
-	SETGATE(idt[T_ILLOP], 1, GD_KT, t_illop, 0);
-	SETGATE(idt[T_DEVICE], 1, GD_KT, t_device, 0);
-	SETGATE(idt[T_DBLFLT], 0, GD_KT, t_dblflt, 0);
-	SETGATE(idt[T_TSS], 1, GD_KT, t_tss, 0);
-	SETGATE(idt[T_SEGNP], 1, GD_KT, t_segnp, 0);
-	SETGATE(idt[T_STACK], 1, GD_KT, t_stack, 0);
-	SETGATE(idt[T_GPFLT], 1, GD_KT, t_gpflt, 0);
-	SETGATE(idt[T_PGFLT], 1, GD_KT, t_pgflt, 0);
-	SETGATE(idt[T_FPERR], 1, GD_KT, t_fperr, 0);
-	SETGATE(idt[T_ALIGN], 1, GD_KT, t_align, 0);
-	SETGATE(idt[T_MCHK], 0, GD_KT, t_mchk, 0);
-	SETGATE(idt[T_SIMDERR], 1, GD_KT, t_simderr, 0);
-	SETGATE(idt[T_SYSCALL], 1, GD_KT, t_syscall, 3);
+	SETGATE(idt[T_DIVIDE],  0, GD_KT, t_divide,  0);
+	SETGATE(idt[T_DEBUG],   0, GD_KT, t_debug,   0);
+	SETGATE(idt[T_NMI],     0, GD_KT, t_nmi,     0);
+	SETGATE(idt[T_BRKPT],   0, GD_KT, t_brkpt,   3);
+	SETGATE(idt[T_OFLOW],   0, GD_KT, t_oflow,   0);
+	SETGATE(idt[T_BOUND],   0, GD_KT, t_bound,   0);
+	SETGATE(idt[T_ILLOP],   0, GD_KT, t_illop,   0);
+	SETGATE(idt[T_DEVICE],  0, GD_KT, t_device,  0);
+	SETGATE(idt[T_DBLFLT],  0, GD_KT, t_dblflt,  0);
+	SETGATE(idt[T_TSS],     0, GD_KT, t_tss,     0);
+	SETGATE(idt[T_SEGNP],   0, GD_KT, t_segnp,   0);
+	SETGATE(idt[T_STACK],   0, GD_KT, t_stack,   0);
+	SETGATE(idt[T_GPFLT],   0, GD_KT, t_gpflt,   0);
+	SETGATE(idt[T_PGFLT],   0, GD_KT, t_pgflt,   0);
+	SETGATE(idt[T_FPERR],   0, GD_KT, t_fperr,   0);
+	SETGATE(idt[T_ALIGN],   0, GD_KT, t_align,   0);
+	SETGATE(idt[T_MCHK],    0, GD_KT, t_mchk,    0);
+	SETGATE(idt[T_SIMDERR], 0, GD_KT, t_simderr, 0);
+	SETGATE(idt[T_SYSCALL], 0, GD_KT, t_syscall, 3);
+
+	SETGATE(idt[IRQ_OFFSET + IRQ_TIMER], 0, GD_KT, t_irq_timer, 0);
+	SETGATE(idt[IRQ_OFFSET + IRQ_KBD], 0, GD_KT, t_irq_kbd, 0);
+	SETGATE(idt[IRQ_OFFSET + 2], 0, GD_KT, t_irq_2, 0);
+	SETGATE(idt[IRQ_OFFSET + 3], 0, GD_KT, t_irq_3, 0);
+	SETGATE(idt[IRQ_OFFSET + IRQ_SERIAL], 0, GD_KT, t_irq_serial, 0);
+	SETGATE(idt[IRQ_OFFSET + 5], 0, GD_KT, t_irq_5, 0);
+	SETGATE(idt[IRQ_OFFSET + 6], 0, GD_KT, t_irq_6, 0);
+	SETGATE(idt[IRQ_OFFSET + IRQ_SPURIOUS], 0, GD_KT, t_irq_spurious, 0);
+	SETGATE(idt[IRQ_OFFSET + 8], 0, GD_KT, t_irq_8, 0);
+	SETGATE(idt[IRQ_OFFSET + 9], 0, GD_KT, t_irq_9, 0);
+	SETGATE(idt[IRQ_OFFSET + 10], 0, GD_KT, t_irq_10, 0);
+	SETGATE(idt[IRQ_OFFSET + 11], 0, GD_KT, t_irq_11, 0);
+	SETGATE(idt[IRQ_OFFSET + 12], 0, GD_KT, t_irq_12, 0);
+	SETGATE(idt[IRQ_OFFSET + 13], 0, GD_KT, t_irq_13, 0);
+	SETGATE(idt[IRQ_OFFSET + IRQ_IDE], 0, GD_KT, t_irq_ide, 0);
+	SETGATE(idt[IRQ_OFFSET + 15], 0, GD_KT, t_irq_15, 0);
 
 	// Per-CPU setup
 	trap_init_percpu();
@@ -135,22 +152,23 @@ trap_init_percpu(void)
 	// get a triple fault.  If you set up an individual CPU's TSS
 	// wrong, you may not get a fault until you try to return from
 	// user space on that CPU.
-	//
+	/*
+	- RSP[0] should be KSTACKTOP - KSTKSIZE - cpunum() * (KSTKSIZE + KSTKGAP)
+	*/
 	// LAB 4: Your code here:
 
 	// Setup a TSS so that we get the right stack
 	// when we trap to the kernel.
-	ts.RSP[0] = KSTACKTOP;
+	thiscpu->cpu_ts.RSP[0] = KSTACKTOP - cpunum() * (KSTKSIZE + KSTKGAP);
 
 	// Initialize the TSS slot of the gdt.
 	//todo use TSSO TSS1
-	extern long gdt_pd;
 
-	SETTSS((struct Segdesc64 *)((gdt_pd>>16)+40),STS_T64A, (uint64_t) (&ts),sizeof(struct TSS64), 0);
+	SETTSS((struct Segdesc64 *)(&gdt[(GD_TSS0 >> 3) + (2 * cpunum())]),STS_T64A, (uint64_t) (&thiscpu->cpu_ts),sizeof(struct TSS64), 0);
 
 	// Load the TSS selector (like other segment selectors, the
 	// bottom three bits are special; we leave them 0)
-	ltr(GD_TSS0);
+	ltr(GD_TSS0 + (16 * cpunum()));
 
 	// Load the IDT
 	lidt(&idt_pd);
@@ -235,7 +253,11 @@ trap_dispatch(struct Trapframe *tf)
 	// Handle clock interrupts. Don't forget to acknowledge the
 	// interrupt using lapic_eoi() before calling the scheduler!
 	// LAB 4: Your code here.
-
+	if (tf->tf_trapno == IRQ_OFFSET + IRQ_TIMER) {
+		lapic_eoi();
+		sched_yield();
+		return;
+	}
 	
 	switch (tf->tf_trapno) {
     case T_PGFLT:
@@ -246,17 +268,15 @@ trap_dispatch(struct Trapframe *tf)
 		monitor(tf);
 		return;
 	case T_SYSCALL:
-        // Call syscall() with arguments from registers
-        // Store return value in rax
-        tf->tf_regs.reg_rax = syscall(
-            tf->tf_regs.reg_rax,    // syscall number
-            tf->tf_regs.reg_rdx,    // arg1
-            tf->tf_regs. reg_rcx,    // arg2
-            tf->tf_regs. reg_rbx,    // arg3
-            tf->tf_regs. reg_rdi,    // arg4
-            tf->tf_regs.reg_rsi     // arg5
-        );
-        return;
+		tf->tf_regs. reg_rax = syscall(
+			tf->tf_regs.reg_rax,    // syscall number
+			tf->tf_regs.reg_rdx,    // arg1
+			tf->tf_regs.reg_rcx,    // arg2
+			tf->tf_regs.reg_rbx,    // arg3
+			tf->tf_regs. reg_rdi,    // arg4
+			tf->tf_regs.reg_rsi     // arg5
+		);
+		return;
     }
 	
 
@@ -298,6 +318,7 @@ trap(struct Trapframe *tf)
 		// Acquire the big kernel lock before doing any
 		// serious kernel work.
 		// LAB 4: Your code here.
+		lock_kernel();
 		assert(curenv);
 
 		// Garbage collect if current enviroment is a zombie
@@ -356,7 +377,7 @@ page_fault_handler(struct Trapframe *tf)
 	// page fault stack frame on the user exception stack (below
 	// UXSTACKTOP), then branch to curenv->env_pgfault_upcall.
 	//
-	// The page fault upcall might cause another page fault, in which case
+	// The page fault upcall might cause another page fault, in which case             <-- nested exception
 	// we branch to the page fault upcall recursively, pushing another
 	// page fault stack frame on top of the user exception stack.
 	//
@@ -380,13 +401,62 @@ page_fault_handler(struct Trapframe *tf)
 	//   user_mem_assert() and env_run() are useful here.
 	//   To change what the user environment runs, modify 'curenv->env_tf'
 	//   (the 'tf' variable points at 'curenv->env_tf').
-
+	/*
+	- if env's page fault upcall exists (curenv->env_pgfault_upcall != NULL)
+		- setup a page fault stack frame on user exception stack (under UXSTACKTOP)
+		- branch to curenv->env_pgfault_upcall
+			- set a couple vars to enable the page fault to return to pfentry.S with the correct tf stack
+				tf->tf_rip = (uintptr_t) curenv->env_pgfault_upcall;
+				tf->tf_rsp = (uintptr_t) utf;
+		- then env_run(curenv)
+		- some info stored in struct UTrapframe (*utf)
+			- must be created within the page right before UXSTACKTOP
+			- first exception handled must be placed right before UXSTACKTOP
+			- before copying, use user_mem_assert() to verify writability
+			utf->utf_fault_va = fault_va;
+			utf->utf_err = tf->tf_err;
+			utf->utf_regs = tf->tf_regs;
+			utf->utf_rip = tf->tf_rip;
+			utf->utf_eflags = tf->tf_eflags;
+			utf->utf_rsp = tf->tf_rsp;
+	- if doesn't exist:
+		- report error, print trapframe w/ print_trapframe(tf)
+		- destroy environment w/ env_destroy(curenv)
+	- nested exception can be recognized because tf_rsp contains an address below UXSTACKTOP and above (UXSTACKTOP - PGSIZE)
+		- in that case, new UTrapframe must be 8 bytes below current tf_rsp
+	*/
 	// LAB 4: Your code here.
+	if (curenv->env_pgfault_upcall == NULL) {
+		cprintf("[%08x] user fault va %016x ip %016x\n",
+			curenv->env_id, fault_va, tf->tf_rip);
+		print_trapframe(tf);
+		env_destroy(curenv);
+		return;
+	}
 
-	// Destroy the environment that caused the fault.
-	cprintf("[%08x] user fault va %016x ip %016x\n",
-		curenv->env_id, fault_va, tf->tf_rip);
-	print_trapframe(tf);
-	env_destroy(curenv);
+	uintptr_t utf_addr;
+
+	if (tf->tf_rsp >= (UXSTACKTOP - PGSIZE) && tf->tf_rsp < UXSTACKTOP) {
+		utf_addr = tf->tf_rsp - sizeof(struct UTrapframe) - 8;
+	} else {
+		utf_addr = UXSTACKTOP - sizeof(struct UTrapframe);
+	}
+
+	user_mem_assert(curenv, (void *)utf_addr, sizeof(struct UTrapframe), PTE_U | PTE_W);
+
+	struct UTrapframe *utf = (struct UTrapframe *)utf_addr;
+
+	utf->utf_fault_va = fault_va;
+	utf->utf_err = tf->tf_err;
+	utf->utf_regs = tf->tf_regs;
+	utf->utf_rip = tf->tf_rip;
+	utf->utf_eflags = tf->tf_eflags;
+	utf->utf_rsp = tf->tf_rsp;
+
+	tf->tf_rip = (uintptr_t)curenv->env_pgfault_upcall;
+	tf->tf_rsp = utf_addr;
+
+	// run environment
+	env_run(curenv);
 }
 

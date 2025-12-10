@@ -37,7 +37,7 @@ _pgfault_upcall:
 	movabs _pgfault_handler, %rax
 	call *%rax
 	
-	// Now the C page fault handler has returned and you must return
+	/* Now the C page fault handler has returned and you must return
 	// to the trap time state.
 	// Push trap-time %eip onto the trap-time stack.
 	//
@@ -63,23 +63,51 @@ _pgfault_upcall:
 	// may find that you have to rearrange your code in non-obvious
 	// ways as registers become unavailable as scratch space.
 	//
-	// LAB 4: Your code here. (Hint. You need to modify the trap time rsp to make room for the return rip )
+	// LAB 4: Your code here. (Hint. You need to modify the trap time rsp to make room for the return rip ) */
 
+	movq  152(%rsp), %rax
+	subq $8, %rax
+	movq %rax, 152(%rsp)
 
-	// Restore the trap-time registers.  After you do this, you
+	movq 136(%rsp), %rbx
+	movq %rbx, (%rax)
+
+	/* Restore the trap-time registers.  After you do this, you
 	// can no longer modify any general-purpose registers.
-	// LAB 4: Your code here. (Hint, the oposite of _alltraps)
+	// LAB 4: Your code here. (Hint, the oposite of _alltraps) */
 
+	addq $16, %rsp
+	
+	popq %r15
+	popq %r14
+	popq %r13
+	popq %r12
+	popq %r11
+	popq %r10
+	popq %r9
+	popq %r8
+	popq %rsi
+	popq %rdi
+	popq %rbp
+	popq %rdx
+	popq %rcx
+	popq %rbx
+	popq %rax
 
-	// Restore rflags from the stack.  After you do this, you can
+	addq $8, %rsp
+
+	/* Restore rflags from the stack.  After you do this, you can
 	// no longer use arithmetic operations or anything else that
 	// modifies rflags.
-	// LAB 4: Your code here.
+	// LAB 4: Your code here. */
 
+	popfq
 
-	// Switch back to the adjusted trap-time stack.
-	// LAB 4: Your code here.
+	/* Switch back to the adjusted trap-time stack.
+	// LAB 4: Your code here. */
 
+	popq %rsp
 
-	// Return to re-execute the instruction that faulted.
-	// LAB 4: Your code here.
+	/* Return to re-execute the instruction that faulted.
+	// LAB 4: Your code here. */
+	ret
